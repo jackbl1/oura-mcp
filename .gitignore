@@ -1,0 +1,13 @@
+# Secrets - never commit
+.env
+tokens.json
+.oura-mcp/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Data exports
+oura-export/
