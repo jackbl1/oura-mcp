@@ -1,6 +1,22 @@
 # Oura MCP server
 
-Read-only MCP server that gives Claude access to your Oura Ring data via the Oura API v2.
+Read-only remote MCP server that gives Claude access to your Oura Ring data via the Oura API v2.
+It runs on Cloudflare Workers, so it works as a custom connector in claude.ai (web, desktop and
+mobile) as well as Claude Code.
+
+## How it works
+
+One Worker is both an OAuth 2.1 authorization server and the MCP endpoint at `/mcp`:
+
+1. You add `https://<your-worker>/mcp` as a custom connector in Claude.
+2. Claude registers itself (Dynamic Client Registration, or a Client ID Metadata Document) and
+   opens the consent page.
+3. You approve, then sign in to Oura. The Worker exchanges Oura's code for tokens and checks your
+   Oura email against `ALLOWED_OURA_EMAILS`. Anyone else is turned away.
+4. The Oura tokens are stored encrypted in the grant (Workers KV, via
+   [`@cloudflare/workers-oauth-provider`](https://github.com/cloudflare/workers-oauth-provider)).
+   When Claude refreshes its token, the Worker refreshes Oura's in the same step. Oura refresh
+   tokens are single-use, and this keeps exactly one copy.
 
 ## Tools
 
@@ -10,57 +26,68 @@ Read-only MCP server that gives Claude access to your Oura Ring data via the Our
 | `get_sleep_sessions` | Detailed sleep periods (stages, HR, HRV, latency, efficiency), incl. naps |
 | `get_oura_data` | Any single data type; optional raw time series |
 | `list_data_types` | Everything available |
-| `export_all_data` | Dumps every data type to JSON files (default `~/oura-export`) |
 
-Dates are `YYYY-MM-DD`, inclusive, defaulting to the last 7 days.
+Dates are `YYYY-MM-DD`, inclusive, defaulting to the last 7 days (UTC).
 
-## Setup
+## Deploy
 
-**1. Install** (Python 3.10+)
+Requires Node 22+ and a Cloudflare account.
 
-    cd oura-mcp
-    python -m venv .venv && source .venv/bin/activate
-    pip install -r requirements.txt
+**1. Install and log in**
 
-**2. Register an Oura app** at https://developer.ouraring.com/applications
-- Redirect URI: `http://localhost:8080/callback` (exactly)
-- The form asks for privacy policy / terms URLs; for a personal app any URL you control works.
-- Copy the client ID and secret into `.env` (see `.env.example`).
+    npm install
+    npx wrangler login
 
-**3. Authorize once**
+**2. Deploy once to get your URL**
 
-    python authorize.py
+    npm run deploy
 
-Your browser opens, you approve, and tokens are saved to `~/.oura-mcp/tokens.json` (mode 600).
-If the token exchange fails with 401 and your app is on the older portal, rerun with
-`OURA_TOKEN_URL=https://api.ouraring.com/oauth/token python authorize.py`.
+Wrangler creates the `OAUTH_KV` namespace on the first deploy and prints your URL, e.g.
+`https://oura-mcp.<account>.workers.dev`.
 
-**4. Connect to Claude**
+**3. Register an Oura app** at https://developer.ouraring.com/applications
+- Redirect URI: `https://oura-mcp.<account>.workers.dev/callback` (exactly)
+- Privacy policy / terms URL: link to `PRIVACY.md` in this repo.
 
-Claude Code:
+**4. Set secrets**
 
-    claude mcp add oura \
-      -e OURA_CLIENT_ID=... -e OURA_CLIENT_SECRET=... \
-      -- /full/path/to/oura-mcp/.venv/bin/python /full/path/to/oura-mcp/server.py
+    npx wrangler secret put OURA_CLIENT_ID
+    npx wrangler secret put OURA_CLIENT_SECRET
+    npx wrangler secret put ALLOWED_OURA_EMAILS   # your Oura account email; comma-separate several
 
-Claude Desktop: add to `claude_desktop_config.json`, then restart the app:
+**5. Connect Claude**
+- claude.ai: Settings → Connectors → Add custom connector → URL `https://oura-mcp.<account>.workers.dev/mcp`.
+  Leave the OAuth client fields empty.
+- Claude Code: `claude mcp add --transport http oura https://oura-mcp.<account>.workers.dev/mcp`, then `/mcp` to sign in.
 
-    {
-      "mcpServers": {
-        "oura": {
-          "command": "/full/path/to/oura-mcp/.venv/bin/python",
-          "args": ["/full/path/to/oura-mcp/server.py"],
-          "env": { "OURA_CLIENT_ID": "...", "OURA_CLIENT_SECRET": "..." }
-        }
-      }
-    }
+## Local development
+
+    cp .dev.vars.example .dev.vars        # fill in, or set OURA_USE_SANDBOX=true
+    npm run dev                           # http://localhost:8787
+    npx @modelcontextprotocol/inspector   # connect to http://localhost:8787/mcp
+
+With `OURA_USE_SANDBOX=true` the consent page skips Oura sign-in and the tools read Oura's mock
+sandbox data. This mode is ignored on any host other than localhost. To test real Oura sign-in
+locally, add `http://localhost:8787/callback` as a second redirect URI on your Oura app.
+
+`npm run typecheck` type-checks; rerun `npm run cf-typegen` after changing `wrangler.jsonc`.
+
+## Configuration
+
+| Name | Kind | Purpose |
+|---|---|---|
+| `OURA_CLIENT_ID`, `OURA_CLIENT_SECRET` | secret | Your Oura app |
+| `ALLOWED_OURA_EMAILS` | secret | Oura accounts allowed to connect. Empty = nobody |
+| `OURA_SCOPES` | var, optional | Space-separated Oura scopes. Default includes `heart_health` (VO2 max, cardiovascular age); drop it if Oura rejects the sign-in with an invalid scope |
+| `OURA_TOKEN_URL` | var, optional | Default `https://api.ouraring.com/oauth/token` |
+| `OURA_USE_SANDBOX` | `.dev.vars` only | `true` = mock data, no Oura sign-in (localhost only) |
 
 ## Notes
 
-- **Refresh tokens are single-use.** Each refresh issues a new one and kills the old. The server
-  writes the new pair atomically before using it. If you ever see "Token refresh failed", rerun
-  `authorize.py`.
+- **Reconnecting.** If Oura access is revoked, Claude's next refresh fails and Claude asks you to
+  reconnect. An idle connection expires after 30 days.
 - **403 errors** mean a missing scope for that data type or an inactive Oura membership.
 - Some types (VO2 max, cardiovascular age, resilience) depend on ring generation and features;
-  missing ones are skipped in the overview.
-- `OURA_USE_SANDBOX=true` points at Oura's sandbox for testing with mock data.
+  missing ones are listed under `unavailable` in the overview.
+- Tool results over ~140k characters are refused with a hint to narrow the range (claude.ai's
+  limit is ~150k).

@@ -1,0 +1,9 @@
+# Copy to .dev.vars for `npm run dev`. Never commit .dev.vars.
+OURA_CLIENT_ID=your-client-id
+OURA_CLIENT_SECRET=your-client-secret
+ALLOWED_OURA_EMAILS=you@example.com
+# Optional
+OURA_SCOPES=email personal daily heartrate workout tag session spo2 heart_health
+OURA_TOKEN_URL=https://api.ouraring.com/oauth/token
+# true = skip Oura sign-in and serve Oura's mock sandbox data (localhost only)
+OURA_USE_SANDBOX=false

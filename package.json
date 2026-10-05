@@ -1,0 +1,30 @@
+{
+  "name": "oura-mcp",
+  "version": "2.0.0",
+  "description": "Remote MCP server for Oura Ring data, on Cloudflare Workers with OAuth",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jackbl1/oura-mcp.git"
+  },
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/jackbl1/oura-mcp/issues"
+  },
+  "homepage": "https://github.com/jackbl1/oura-mcp#readme",
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^1.2.1",
+    "@modelcontextprotocol/server": "^2.3.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "wrangler": "^4.147.0"
+  },
+  "private": true
+}

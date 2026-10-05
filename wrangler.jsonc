@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "oura-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "observability": { "enabled": true },
+  // Grants, tokens and registered clients. No "id": `wrangler deploy` creates
+  // the namespace on first deploy and remembers it.
+  "kv_namespaces": [{ "binding": "OAUTH_KV" }],
+  // Secrets (set with `wrangler secret put`, or .dev.vars locally):
+  //   OURA_CLIENT_ID, OURA_CLIENT_SECRET, ALLOWED_OURA_EMAILS
+  // Optional vars:
+  //   OURA_SCOPES (space-separated Oura scopes), OURA_TOKEN_URL, OURA_USE_SANDBOX (local dev only)
+  "vars": {}
+}
